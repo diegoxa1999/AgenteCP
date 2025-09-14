@@ -153,7 +153,14 @@
 
   // ========= WebRTC =========
   let pc=null, roomDoc=null, callerCandidates=null, calleeCandidates=null, remoteStream=null, localStream=null, stopped=false;
-  const iceServers = [{ urls: ['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302'] }];
+  const iceServers = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  {
+    urls: 'turn:global.relay.metered.ca:80',
+    username: 'openai',
+    credential: 'openai123'
+  }
+];
 
   async function start() {
     stopped=false; startBtn.disabled=true; stopBtn.disabled=false;
