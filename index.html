@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WebRTC Cámara – Emisor / Viewer</title>
+<title>WebRTC Cámara – Emisor / Viewer + Controles</title>
 <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;margin:0;padding:16px;background:#0b0f14;color:#e6eef8}
   .card{max-width:980px;margin:0 auto;background:#121922;border:1px solid #1e2a36;border-radius:14px;padding:16px}
@@ -49,6 +49,37 @@
 
   <video id="video" autoplay playsinline muted></video>
   <p id="status" class="hint"></p>
+
+  <!-- Controles sólo para el Viewer -->
+  <div id="controls" style="margin-top:20px; display:none;">
+    <h3 style="margin-bottom:10px;">🎛 Controles de cámara</h3>
+
+    <div style="margin-bottom:12px;">
+      <label>🔍 Zoom:
+        <input type="range" id="zoom" min="1" max="5" step="0.1" value="1">
+        <span id="zoomVal">1.0</span>x
+      </label>
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label>🎯 Enfoque:
+        <input type="range" id="focus" min="0" max="1" step="0.01" value="0.5">
+        <span id="focusVal">0.50</span>
+      </label>
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label>🌈 Balance de blancos:
+        <select id="wb">
+          <option value="auto">Auto</option>
+          <option value="daylight">Luz día</option>
+          <option value="cloudy">Nublado</option>
+          <option value="fluorescent">Fluorescente</option>
+          <option value="incandescent">Incandescente</option>
+        </select>
+      </label>
+    </div>
+  </div>
 </div>
 
 <!-- Firebase compat SDKs -->
@@ -81,6 +112,7 @@
   const emitterOpts = document.getElementById('emitterOpts');
   const shareUrl = document.getElementById('shareUrl');
   const statusEl = document.getElementById('status');
+  const controlsDiv = document.getElementById('controls');
 
   const qs = new URLSearchParams(location.search);
   const urlRoom = qs.get('room') || '';
@@ -90,6 +122,7 @@
 
   function updateUI() {
     emitterOpts.style.display = (roleSel.value === 'emitter') ? 'flex' : 'none';
+    controlsDiv.style.display = (roleSel.value === 'viewer') ? 'block' : 'none';
     const r = roomInp.value.trim() || 'sala-demo';
     const base = location.origin + location.pathname;
     shareUrl.textContent = `${base}?room=${encodeURIComponent(r)}&role=viewer`;
@@ -137,6 +170,25 @@
       localStream = await navigator.mediaDevices.getUserMedia({ video:vConstraints, audio:!!sendAudioChk.checked });
       localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
       if (remoteStream.getTracks().length===0) videoEl.srcObject=localStream;
+
+      // Escuchar cambios de control en Firestore
+      const track = localStream.getVideoTracks()[0];
+      db.collection("rooms").doc(roomId).collection("control").doc("camSettings")
+        .onSnapshot((doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            console.log("Aplicando controles:", data);
+            let constraints = {};
+            if (data.zoom) constraints.zoom = data.zoom;
+            if (data.focusDistance !== undefined) {
+              constraints.advanced = [{ focusMode: "manual", focusDistance: data.focusDistance }];
+            }
+            if (data.whiteBalanceMode) {
+              constraints.advanced = (constraints.advanced || []).concat([{ whiteBalanceMode: data.whiteBalanceMode }]);
+            }
+            track.applyConstraints(constraints).catch(err => console.error("Error:", err));
+          }
+        });
     }
 
     roomDoc = db.collection('rooms').doc(roomId);
@@ -169,6 +221,29 @@
         if(ch.type==='added'){ pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); }
       }));
       statusEl.innerHTML='<span class="ok">Conectado (enviado answer).</span>';
+
+      // Viewer: enviar controles
+      const zoomSlider = document.getElementById("zoom");
+      const focusSlider = document.getElementById("focus");
+      zoomSlider.addEventListener("input", () => {
+        document.getElementById("zoomVal").innerText = parseFloat(zoomSlider.value).toFixed(1);
+        sendControl();
+      });
+      focusSlider.addEventListener("input", () => {
+        document.getElementById("focusVal").innerText = parseFloat(focusSlider.value).toFixed(2);
+        sendControl();
+      });
+      document.getElementById("wb").addEventListener("change", sendControl);
+
+      function sendControl() {
+        db.collection("rooms").doc(roomId).collection("control").doc("camSettings")
+          .set({
+            zoom: parseFloat(zoomSlider.value),
+            focusDistance: parseFloat(focusSlider.value),
+            whiteBalanceMode: document.getElementById("wb").value,
+            updatedAt: Date.now()
+          });
+      }
     }
   }
   async function stop() {
