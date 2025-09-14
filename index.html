@@ -1,267 +1,168 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WebRTC Cámara – Emisor / Viewer + Controles</title>
-<style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;margin:0;padding:16px;background:#0b0f14;color:#e6eef8}
-  .card{max-width:980px;margin:0 auto;background:#121922;border:1px solid #1e2a36;border-radius:14px;padding:16px}
-  h1{margin:0 0 12px;font-size:20px}
-  .row{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
-  label{font-size:14px;opacity:.9}
-  select,input,button{background:#0f151d;color:#e6eef8;border:1px solid #2a3a4d;border-radius:10px;padding:8px 10px}
-  button{cursor:pointer}
-  button.primary{background:#1d6fff;border-color:#2a72ff}
-  video{width:100%;max-height:70vh;background:#000;border-radius:12px}
-  .hint{font-size:12px;opacity:.8}
-  .url{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#0f151d;border:1px dashed #2a3a4d;padding:8px;border-radius:10px;word-break:break-all}
-  .ok{color:#7be59b} .warn{color:#ffd166} .err{color:#ff6b6b}
-</style>
+  <meta charset="UTF-8" />
+  <title>WebRTC Cámara – Emisor / Viewer</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <style>
+    body { background:#111; color:#eee; font-family:sans-serif; text-align:center; }
+    video { width:80%; margin:10px; background:#000; border-radius:8px; }
+    select,input,button { margin:5px; padding:6px; }
+    #controls label { display:block; margin:10px; }
+  </style>
 </head>
 <body>
-<div class="card">
-  <h1>WebRTC Cámara – Emisor / Viewer</h1>
+  <h2>WebRTC Cámara – Emisor / Viewer</h2>
 
-  <div class="row">
-    <label>Rol:</label>
-    <select id="role">
-      <option value="emitter">Emisor (envía cámara)</option>
-      <option value="viewer">Viewer (sólo ve)</option>
+  <label>Rol:
+    <select id="roleSel">
+      <option value="emitter">Emitter (cam)</option>
+      <option value="viewer">Viewer (solo ve)</option>
     </select>
+  </label>
 
-    <label> Sala:</label>
-    <input id="room" placeholder="p.ej. casa1" />
+  <label>Sala: <input id="roomInp" value="casa1"></label>
 
-    <button id="start" class="primary">Iniciar</button>
-    <button id="stop" disabled>Detener</button>
+  <div id="emitterOpts">
+    <label><input type="checkbox" id="mirrorChk"> Espejo</label>
+    <label><input type="checkbox" id="audioChk"> Enviar audio</label>
   </div>
 
-  <div class="row" id="emitterOpts" style="display:none">
-    <label>Cámara:</label>
-    <select id="cameraSelect"></select>
-    <label><input type="checkbox" id="mirror" checked /> Espejo (selfie)</label>
-    <label><input type="checkbox" id="sendAudio" /> Enviar audio</label>
-  </div>
+  <button id="startBtn">Iniciar</button>
+  <button id="stopBtn">Detener</button>
+  <p id="status">⏳ Esperando…</p>
 
-  <p class="hint">Comparte este link con el Viewer cuando seas Emisor:</p>
-  <div id="shareUrl" class="url"></div>
+  <video id="videoEl" autoplay playsinline></video>
 
-  <video id="video" autoplay playsinline muted></video>
-  <p id="status" class="hint"></p>
+  <p>Comparte este link con el Viewer cuando seas Emisor:</p>
+  <code id="shareUrl"></code>
 
-  <!-- Controles solo para Viewer -->
+  <!-- Controles para Viewer -->
   <div id="controls" style="margin-top:20px; display:none;">
-    <h3 style="margin-bottom:10px;">🎛 Controles de cámara</h3>
-
-    <div style="margin-bottom:12px;">
-      <label>🔍 Zoom:
-        <input type="range" id="zoom" min="1" max="5" step="0.1" value="1">
-        <span id="zoomVal">1.0</span>x
-      </label>
-    </div>
-
-    <div style="margin-bottom:12px;">
-      <label>🎯 Enfoque:
-        <input type="range" id="focus" min="0" max="1" step="0.01" value="0.5">
-        <span id="focusVal">0.50</span>
-      </label>
-    </div>
-
-    <div style="margin-bottom:12px;">
-      <label>☀️ Exposición:
-        <input type="range" id="exposure" min="0" max="1" step="0.01" value="0.5">
-        <span id="exposureVal">0.50</span>
-      </label>
-    </div>
-
-    <div style="margin-bottom:12px;">
-      <label>📷 ISO:
-        <input type="range" id="iso" min="100" max="1600" step="50" value="400">
-        <span id="isoVal">400</span>
-      </label>
-    </div>
-
-    <div style="margin-bottom:12px;">
-      <label>🌈 Balance de blancos:
-        <select id="wb">
-          <option value="auto">Auto</option>
-          <option value="daylight">Luz día</option>
-          <option value="cloudy">Nublado</option>
-          <option value="fluorescent">Fluorescente</option>
-          <option value="incandescent">Incandescente</option>
-        </select>
-      </label>
-    </div>
+    <h3>🎛 Controles de cámara</h3>
+    <div><label>Zoom:
+      <input type="range" id="zoom" min="1" max="5" step="0.1" value="1">
+      <span id="zoomVal">1.0</span>x
+    </label></div>
+    <div><label>Enfoque:
+      <input type="range" id="focus" min="0" max="1" step="0.01" value="0.5">
+      <span id="focusVal">0.50</span>
+    </label></div>
+    <div><label>Balance de blancos:
+      <select id="wb">
+        <option value="auto">Auto</option>
+        <option value="daylight">Luz día</option>
+        <option value="cloudy">Nublado</option>
+        <option value="fluorescent">Fluorescente</option>
+        <option value="incandescent">Incandescente</option>
+      </select>
+    </label></div>
   </div>
-</div>
 
-<!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- Caja para mostrar capabilities -->
+  <div id="capabilitiesBox" style="margin-top:20px; display:none;">
+    <h3>📷 Capacidades de la cámara (Emisor)</h3>
+    <pre id="capsOutput" style="background:#111;color:#0f0;padding:10px;max-height:260px;overflow:auto;border-radius:10px;"></pre>
+  </div>
 
 <script>
-(async () => {
-  // ========= Firebase =========
-  const firebaseConfig = {
-    apiKey: "AIzaSyDb_q-2SL_x-Xj4aBrpN4D57N7zMgQmYjw",
-    authDomain: "camara-ipad.firebaseapp.com",
-    projectId: "camara-ipad",
-    storageBucket: "camara-ipad.firebasestorage.app",
-    messagingSenderId: "891674821126",
-    appId: "1:891674821126:web:c3cefb5dc4cbc5f08f7987"
-  };
-  const app = firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
+const firebaseConfig = {
+  apiKey: "AIzaSyDb_q-2SL_x-Xj4aBrpN4D57N7zMgQmYjw",
+  authDomain: "camara-ipad.firebaseapp.com",
+  projectId: "camara-ipad",
+  storageBucket: "camara-ipad.firebasestorage.app",
+  messagingSenderId: "891674821126",
+  appId: "1:891674821126:web:c3cefb5dc4cbc5f08f7987"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
-  // ========= UI Refs =========
-  const roleSel = document.getElementById('role');
-  const roomInp = document.getElementById('room');
-  const startBtn = document.getElementById('start');
-  const stopBtn = document.getElementById('stop');
-  const videoEl = document.getElementById('video');
-  const camSel = document.getElementById('cameraSelect');
-  const mirrorChk = document.getElementById('mirror');
-  const sendAudioChk = document.getElementById('sendAudio');
-  const emitterOpts = document.getElementById('emitterOpts');
-  const shareUrl = document.getElementById('shareUrl');
-  const statusEl = document.getElementById('status');
-  const controlsDiv = document.getElementById('controls');
+const roleSel = document.getElementById('roleSel');
+const roomInp = document.getElementById('roomInp');
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+const videoEl = document.getElementById('videoEl');
+const mirrorChk = document.getElementById('mirrorChk');
+const audioChk = document.getElementById('audioChk');
+const shareUrl = document.getElementById('shareUrl');
+const controlsDiv = document.getElementById('controls');
 
-  const qs = new URLSearchParams(location.search);
-  const urlRoom = qs.get('room') || '';
-  const urlRole = qs.get('role') || '';
-  if (urlRoom) roomInp.value = urlRoom;
-  if (urlRole) roleSel.value = urlRole;
+let pc, localStream, roomId;
 
-  function updateUI() {
-    emitterOpts.style.display = (roleSel.value === 'emitter') ? 'flex' : 'none';
-    controlsDiv.style.display = (roleSel.value === 'viewer') ? 'block' : 'none';
-    const r = roomInp.value.trim() || 'sala-demo';
-    const base = location.origin + location.pathname;
-    shareUrl.textContent = `${base}?room=${encodeURIComponent(r)}&role=viewer`;
-    videoEl.style.transform = (mirrorChk.checked && roleSel.value === 'emitter') ? 'scaleX(-1)' : 'none';
-  }
-  updateUI();
-  roleSel.addEventListener('change', updateUI);
-  roomInp.addEventListener('input', updateUI);
-  mirrorChk.addEventListener('change', updateUI);
+function updateUI() {
+  document.getElementById('emitterOpts').style.display = (roleSel.value === 'emitter') ? 'block':'none';
+  controlsDiv.style.display = (roleSel.value === 'viewer') ? 'block':'none';
+  document.getElementById('capabilitiesBox').style.display = (roleSel.value === 'viewer') ? 'block':'none';
+  const base = location.origin + location.pathname;
+  const r = roomInp.value.trim()||'demo';
+  shareUrl.textContent = `${base}?room=${encodeURIComponent(r)}&role=viewer`;
+  videoEl.style.transform = (mirrorChk.checked && roleSel.value==='emitter')?'scaleX(-1)':'none';
+}
+roleSel.onchange = updateUI; roomInp.oninput = updateUI; mirrorChk.oninput=updateUI; updateUI();
 
-  // ========= WebRTC =========
-  let pc=null, roomDoc=null, callerCandidates=null, calleeCandidates=null, remoteStream=null, localStream=null, stopped=false;
+startBtn.onclick = async () => {
+  roomId = roomInp.value.trim()||'demo';
   const iceServers = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    {
-      urls: 'turn:global.relay.metered.ca:80',
-      username: 'openai',
-      credential: 'openai123'
-    }
+    { urls:'stun:stun.l.google.com:19302' },
+    { urls:'turn:global.relay.metered.ca:80', username:'openai', credential:'openai123' }
   ];
+  pc = new RTCPeerConnection({iceServers});
+  pc.onicecandidate = e=>{
+    if(e.candidate){
+      db.collection('rooms').doc(roomId).collection(roleSel.value==='emitter'?'callerCandidates':'calleeCandidates').add(e.candidate.toJSON());
+    }
+  };
+  pc.ontrack = e=> videoEl.srcObject = e.streams[0];
 
-  async function start() {
-    stopped=false; startBtn.disabled=true; stopBtn.disabled=false;
-    const role = roleSel.value;
-    const roomId = (roomInp.value.trim()||'sala-demo').toLowerCase();
-    videoEl.muted = (role==='emitter');
-    pc = new RTCPeerConnection({ iceServers });
-    remoteStream = new MediaStream();
-    videoEl.srcObject = remoteStream;
-    pc.addEventListener('track', e => { e.streams[0].getTracks().forEach(t=>remoteStream.addTrack(t)); });
+  if(roleSel.value==='emitter'){
+    localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:audioChk.checked });
+    videoEl.srcObject = localStream;
+    localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
 
-    if (role==='emitter') {
-      const vConstraints = camSel.value ? {deviceId:{exact:camSel.value}} : {facingMode:'environment'};
-      localStream = await navigator.mediaDevices.getUserMedia({ video:vConstraints, audio:!!sendAudioChk.checked });
-      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-      if (remoteStream.getTracks().length===0) videoEl.srcObject=localStream;
-
-      // Escuchar cambios de control
+    // === enviar capabilities ===
+    try {
       const track = localStream.getVideoTracks()[0];
-      db.collection("rooms").doc(roomId).collection("control").doc("camSettings")
-        .onSnapshot((doc) => {
-          if (doc.exists) {
-            const d = doc.data();
-            let constraints = {};
-            if (d.zoom) constraints.zoom = d.zoom;
-            let adv = [];
-            if (d.focusDistance !== undefined) adv.push({ focusMode: "manual", focusDistance: d.focusDistance });
-            if (d.whiteBalanceMode) adv.push({ whiteBalanceMode: d.whiteBalanceMode });
-            if (d.exposure !== undefined) adv.push({ exposureMode: "manual", exposureCompensation: d.exposure });
-            if (d.iso !== undefined) adv.push({ iso: d.iso });
-            if (adv.length) constraints.advanced = adv;
-            track.applyConstraints(constraints).catch(err => console.error("Error:", err));
-          }
-        });
-    }
+      let caps = track.getCapabilities? track.getCapabilities() : {note:"no soportado"};
+      caps._sentAt = Date.now();
+      caps._ua = navigator.userAgent;
+      await db.collection('rooms').doc(roomId).collection('control').doc('capabilities').set(caps);
+    } catch(e){ console.error(e); }
 
-    // === Signal en Firestore ===
-    roomDoc = db.collection('rooms').doc(roomId);
-    callerCandidates = roomDoc.collection('callerCandidates');
-    calleeCandidates = roomDoc.collection('calleeCandidates');
-    pc.onicecandidate = async e => { if(e.candidate&&!stopped){ const col=(role==='emitter')?callerCandidates:calleeCandidates; await col.add(e.candidate.toJSON()); } };
-
-    if (role==='emitter') {
-      const offer = await pc.createOffer({ offerToReceiveAudio:true, offerToReceiveVideo:true });
-      await pc.setLocalDescription(offer);
-      await roomDoc.set({ offer:{type:offer.type,sdp:offer.sdp}, createdAt:Date.now() });
-      roomDoc.onSnapshot(async snap => {
-        const data=snap.data(); if(!pc.currentRemoteDescription&&data&&data.answer){
-          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-          statusEl.innerHTML='<span class="ok">Conectado (recibida answer).</span>';
-        }
-      });
-      calleeCandidates.onSnapshot(snap => snap.docChanges().forEach(ch=>{
-        if(ch.type==='added'){ pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); }
-      }));
-      statusEl.textContent='Oferta enviada. Esperando Viewer...';
-    } else {
-      const snap=await roomDoc.get();
-      if(!snap.exists||!snap.data().offer){ statusEl.innerHTML='<span class="warn">No hay oferta aún, inicia Emisor primero.</span>'; startBtn.disabled=false; stopBtn.disabled=true; return; }
-      const offer=snap.data().offer;
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer=await pc.createAnswer(); await pc.setLocalDescription(answer);
-      await roomDoc.update({ answer:{type:answer.type,sdp:answer.sdp}, answeredAt:Date.now() });
-      callerCandidates.onSnapshot(snap2=>snap2.docChanges().forEach(ch=>{
-        if(ch.type==='added'){ pc.addIceCandidate(new RTCIceCandidate(ch.doc.data())); }
-      }));
-      statusEl.innerHTML='<span class="ok">Conectado (enviado answer).</span>';
-
-      // Viewer: enviar controles
-      const zoomSlider = document.getElementById("zoom");
-      const focusSlider = document.getElementById("focus");
-      const exposureSlider = document.getElementById("exposure");
-      const isoSlider = document.getElementById("iso");
-
-      zoomSlider.addEventListener("input", () => { document.getElementById("zoomVal").innerText = parseFloat(zoomSlider.value).toFixed(1); sendControl(); });
-      focusSlider.addEventListener("input", () => { document.getElementById("focusVal").innerText = parseFloat(focusSlider.value).toFixed(2); sendControl(); });
-      exposureSlider.addEventListener("input", () => { document.getElementById("exposureVal").innerText = parseFloat(exposureSlider.value).toFixed(2); sendControl(); });
-      isoSlider.addEventListener("input", () => { document.getElementById("isoVal").innerText = isoSlider.value; sendControl(); });
-      document.getElementById("wb").addEventListener("change", sendControl);
-
-      function sendControl() {
-        db.collection("rooms").doc(roomId).collection("control").doc("camSettings")
-          .set({
-            zoom: parseFloat(zoomSlider.value),
-            focusDistance: parseFloat(focusSlider.value),
-            exposure: parseFloat(exposureSlider.value),
-            iso: parseInt(isoSlider.value),
-            whiteBalanceMode: document.getElementById("wb").value,
-            updatedAt: Date.now()
-          });
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await db.collection('rooms').doc(roomId).set({offer});
+    db.collection('rooms').doc(roomId).onSnapshot(async snap=>{
+      const data=snap.data();
+      if(data?.answer && !pc.currentRemoteDescription){
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
       }
-    }
+    });
+    db.collection('rooms').doc(roomId).collection('calleeCandidates').onSnapshot(snap=>{
+      snap.docChanges().forEach(c=>c.type==='added'&&pc.addIceCandidate(new RTCIceCandidate(c.doc.data())));
+    });
+  } else {
+    const room = await db.collection('rooms').doc(roomId).get();
+    if(!room.exists){ alert('No existe sala'); return;}
+    const offer=room.data().offer;
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await db.collection('rooms').doc(roomId).update({answer});
+    db.collection('rooms').doc(roomId).collection('callerCandidates').onSnapshot(snap=>{
+      snap.docChanges().forEach(c=>c.type==='added'&&pc.addIceCandidate(new RTCIceCandidate(c.doc.data())));
+    });
+    // escuchar capabilities
+    db.collection('rooms').doc(roomId).collection('control').doc('capabilities')
+      .onSnapshot(doc=>{
+        document.getElementById('capsOutput').textContent = doc.exists ? JSON.stringify(doc.data(),null,2) : 'Esperando...';
+      });
   }
-  async function stop() {
-    stopped=true; startBtn.disabled=false; stopBtn.disabled=true;
-    try{pc&&pc.getSenders().forEach(s=>s.track&&s.track.stop());}catch{}
-    try{localStream&&localStream.getTracks().forEach(t=>t.stop());}catch{}
-    try{pc&&pc.close();}catch{} pc=null; videoEl.srcObject=null;
-    statusEl.innerHTML='<span class="ok">Sesión detenida.</span>';
-  }
-  startBtn.addEventListener('click', start);
-  stopBtn.addEventListener('click', stop);
-  document.body.addEventListener('click',()=>{ if(videoEl&&videoEl.paused) videoEl.play().catch(()=>{}); },{once:true});
-  updateUI();
-})();
+  statusEl.innerHTML='<span style="color:lime">Conectado</span>';
+};
+
+stopBtn.onclick=()=>{ pc&&pc.close(); pc=null; statusEl.textContent='Detenido'; };
 </script>
 </body>
 </html>
