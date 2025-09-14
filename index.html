@@ -50,7 +50,7 @@
   <video id="video" autoplay playsinline muted></video>
   <p id="status" class="hint"></p>
 
-  <!-- Controles sólo para el Viewer -->
+  <!-- Controles solo para Viewer -->
   <div id="controls" style="margin-top:20px; display:none;">
     <h3 style="margin-bottom:10px;">🎛 Controles de cámara</h3>
 
@@ -69,6 +69,20 @@
     </div>
 
     <div style="margin-bottom:12px;">
+      <label>☀️ Exposición:
+        <input type="range" id="exposure" min="0" max="1" step="0.01" value="0.5">
+        <span id="exposureVal">0.50</span>
+      </label>
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label>📷 ISO:
+        <input type="range" id="iso" min="100" max="1600" step="50" value="400">
+        <span id="isoVal">400</span>
+      </label>
+    </div>
+
+    <div style="margin-bottom:12px;">
       <label>🌈 Balance de blancos:
         <select id="wb">
           <option value="auto">Auto</option>
@@ -82,13 +96,13 @@
   </div>
 </div>
 
-<!-- Firebase compat SDKs -->
+<!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
 <script>
 (async () => {
-  // ========= Configuración Firebase =========
+  // ========= Firebase =========
   const firebaseConfig = {
     apiKey: "AIzaSyDb_q-2SL_x-Xj4aBrpN4D57N7zMgQmYjw",
     authDomain: "camara-ipad.firebaseapp.com",
@@ -133,34 +147,16 @@
   roomInp.addEventListener('input', updateUI);
   mirrorChk.addEventListener('change', updateUI);
 
-  // ========= Listar cámaras =========
-  async function listCams() {
-    try {
-      await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter(d => d.kind === 'videoinput');
-      camSel.innerHTML = '';
-      cams.forEach((c, i) => {
-        const opt = document.createElement('option');
-        opt.value = c.deviceId;
-        opt.textContent = c.label || `Cámara ${i+1}`;
-        camSel.appendChild(opt);
-      });
-    } catch(e) { console.error(e); }
-  }
-  if (roleSel.value === 'emitter') listCams();
-  roleSel.addEventListener('change', () => { if (roleSel.value==='emitter') listCams(); });
-
   // ========= WebRTC =========
   let pc=null, roomDoc=null, callerCandidates=null, calleeCandidates=null, remoteStream=null, localStream=null, stopped=false;
   const iceServers = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  {
-    urls: 'turn:global.relay.metered.ca:80',
-    username: 'openai',
-    credential: 'openai123'
-  }
-];
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+      urls: 'turn:global.relay.metered.ca:80',
+      username: 'openai',
+      credential: 'openai123'
+    }
+  ];
 
   async function start() {
     stopped=false; startBtn.disabled=true; stopBtn.disabled=false;
@@ -178,26 +174,26 @@
       localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
       if (remoteStream.getTracks().length===0) videoEl.srcObject=localStream;
 
-      // Escuchar cambios de control en Firestore
+      // Escuchar cambios de control
       const track = localStream.getVideoTracks()[0];
       db.collection("rooms").doc(roomId).collection("control").doc("camSettings")
         .onSnapshot((doc) => {
           if (doc.exists) {
-            const data = doc.data();
-            console.log("Aplicando controles:", data);
+            const d = doc.data();
             let constraints = {};
-            if (data.zoom) constraints.zoom = data.zoom;
-            if (data.focusDistance !== undefined) {
-              constraints.advanced = [{ focusMode: "manual", focusDistance: data.focusDistance }];
-            }
-            if (data.whiteBalanceMode) {
-              constraints.advanced = (constraints.advanced || []).concat([{ whiteBalanceMode: data.whiteBalanceMode }]);
-            }
+            if (d.zoom) constraints.zoom = d.zoom;
+            let adv = [];
+            if (d.focusDistance !== undefined) adv.push({ focusMode: "manual", focusDistance: d.focusDistance });
+            if (d.whiteBalanceMode) adv.push({ whiteBalanceMode: d.whiteBalanceMode });
+            if (d.exposure !== undefined) adv.push({ exposureMode: "manual", exposureCompensation: d.exposure });
+            if (d.iso !== undefined) adv.push({ iso: d.iso });
+            if (adv.length) constraints.advanced = adv;
             track.applyConstraints(constraints).catch(err => console.error("Error:", err));
           }
         });
     }
 
+    // === Signal en Firestore ===
     roomDoc = db.collection('rooms').doc(roomId);
     callerCandidates = roomDoc.collection('callerCandidates');
     calleeCandidates = roomDoc.collection('calleeCandidates');
@@ -232,14 +228,13 @@
       // Viewer: enviar controles
       const zoomSlider = document.getElementById("zoom");
       const focusSlider = document.getElementById("focus");
-      zoomSlider.addEventListener("input", () => {
-        document.getElementById("zoomVal").innerText = parseFloat(zoomSlider.value).toFixed(1);
-        sendControl();
-      });
-      focusSlider.addEventListener("input", () => {
-        document.getElementById("focusVal").innerText = parseFloat(focusSlider.value).toFixed(2);
-        sendControl();
-      });
+      const exposureSlider = document.getElementById("exposure");
+      const isoSlider = document.getElementById("iso");
+
+      zoomSlider.addEventListener("input", () => { document.getElementById("zoomVal").innerText = parseFloat(zoomSlider.value).toFixed(1); sendControl(); });
+      focusSlider.addEventListener("input", () => { document.getElementById("focusVal").innerText = parseFloat(focusSlider.value).toFixed(2); sendControl(); });
+      exposureSlider.addEventListener("input", () => { document.getElementById("exposureVal").innerText = parseFloat(exposureSlider.value).toFixed(2); sendControl(); });
+      isoSlider.addEventListener("input", () => { document.getElementById("isoVal").innerText = isoSlider.value; sendControl(); });
       document.getElementById("wb").addEventListener("change", sendControl);
 
       function sendControl() {
@@ -247,6 +242,8 @@
           .set({
             zoom: parseFloat(zoomSlider.value),
             focusDistance: parseFloat(focusSlider.value),
+            exposure: parseFloat(exposureSlider.value),
+            iso: parseInt(isoSlider.value),
             whiteBalanceMode: document.getElementById("wb").value,
             updatedAt: Date.now()
           });
